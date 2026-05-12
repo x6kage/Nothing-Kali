@@ -7,14 +7,15 @@ Common installation steps for all Nothing devices after flashing a custom kernel
 - Custom kernel flashed with USB ConfigFS gadget options enabled (see device-specific guides)
 - Root access (Magisk / KernelSU / KernelSU Next)
 - Unlocked bootloader
-- USB debugging enabled
+- USB debugging enabled (`Settings → Developer options → USB debugging`)
 - PC with `adb` and `fastboot`
+- ~10 GB free storage on the device (for full chroot)
 
 ## 1. Download NetHunter Pro
 
 Download **NetHunter Pro Generic arm64** from the official Kali download page:
 
-👉 https://www.kali.org/get-kali/#kali-mobile
+https://www.kali.org/get-kali/#kali-mobile
 
 Select:
 - **Platform:** Android
@@ -23,47 +24,120 @@ Select:
 
 This downloads a zip file (e.g., `nethunter-generic-arm64-kalifs-full.zip`).
 
-## 2. Install via Magisk
+### Which Version?
 
-### Method A: Flash via Magisk Manager
+| Variant | Size | Contents | Recommended |
+|---------|------|----------|:-:|
+| **Full** | ~1.5 GB | Complete toolset (Metasploit, Nmap, Burp, etc.) | ✅ |
+| **Minimal** | ~300 MB | Core tools only, install others via `apt` | For low storage |
+| **Nano** | ~100 MB | Bare minimum | Not recommended |
+
+> Always verify the download checksum against the SHA256 listed on the Kali download page.
+
+## 2. Install NetHunter
+
+### Method A: Flash via Magisk Manager (Recommended)
 
 1. Transfer the NetHunter zip to the device:
    ```bash
-   adb push nethunter-generic-arm64-kalifs-full.zip /sdcard/
+   adb push nethunter-generic-arm64-kalifs-full.zip /sdcard/Download/
    ```
 
 2. Open **Magisk Manager** → **Modules** → **Install from storage**
 
-3. Select the NetHunter zip and flash
+3. Select the NetHunter zip file and flash
+
+4. **Do not reboot yet** — proceed to post-install verification first if you want, or reboot when prompted
+
+### Method B: Flash via KernelSU
+
+KernelSU uses a different module format, but NetHunter's installer detects the root method automatically.
+
+1. Transfer the zip to the device:
+   ```bash
+   adb push nethunter-generic-arm64-kalifs-full.zip /sdcard/Download/
+   ```
+
+2. Open **KernelSU Manager** → **Modules** → **Install from storage**
+
+3. Select the NetHunter zip — the installer will detect KernelSU and configure accordingly
 
 4. Reboot when prompted
 
-### Method B: Flash via TWRP / Custom Recovery
+> **KernelSU Note:** If the NetHunter installer fails to detect KernelSU, you may need to install via terminal:
+> ```bash
+> adb shell
+> su
+> cd /sdcard/Download/
+> unzip nethunter-generic-arm64-kalifs-full.zip -d /tmp/nethunter/
+> sh /tmp/nethunter/META-INF/com/google/android/update-binary "" "" /sdcard/Download/nethunter-generic-arm64-kalifs-full.zip
+> ```
+
+### Method C: Flash via Custom Recovery (TWRP / OrangeFox)
 
 If TWRP or OrangeFox is available for your device:
 
-1. Boot into recovery
-2. Flash the NetHunter zip
-3. Reboot to system
+1. Boot into recovery:
+   ```bash
+   adb reboot recovery
+   ```
+2. Navigate to **Install** → select the NetHunter zip
+3. Swipe to flash
+4. Reboot to system
+
+> **Note:** Custom recovery support varies by device. Most Nothing phones don't have official TWRP builds yet. Method A or B is more reliable.
 
 ## 3. Initial Setup
 
 After rebooting:
 
-1. Open **NetHunter** app
-2. Grant all requested permissions (root, storage, location)
-3. Go to **Kali Chroot Manager**
-4. Install the chroot:
-   - Select **Full chroot** for maximum tooling
-   - Architecture: **arm64**
-   - Wait for download and extraction to complete
+1. **Open the NetHunter app** — it should appear in your app drawer
+
+2. **Grant all permissions** when prompted:
+   - Root access (Superuser)
+   - Storage
+   - Location (for WiFi features)
+   - Notification (for background services)
+
+3. **Set up the Kali Chroot:**
+   - Go to **Kali Chroot Manager** in the NetHunter app
+   - If the chroot wasn't included in the flash, download it:
+     - Select **Full chroot** for maximum tooling
+     - Architecture: **arm64**
+     - Wait for download and extraction (can take 10–30 minutes depending on connection)
+   - Once installed, tap **Start Kali Chroot**
+
+4. **Verify the chroot is running:**
+   ```bash
+   # In NetHunter terminal or a root shell:
+   su
+   nethunter
+   cat /etc/os-release
+   # Should show: Kali GNU/Linux
+   ```
+
+### First-Time Configuration Inside Chroot
+
+```bash
+# Update package lists
+apt update
+
+# Upgrade installed packages (optional, takes time)
+apt upgrade -y
+
+# Install commonly used tools if not present
+apt install -y nmap metasploit-framework aircrack-ng wifite sqlmap john hashcat \
+  hydra burpsuite responder seclists wordlists
+
+# Set up Metasploit database
+msfdb init
+```
 
 ## 4. Verify USB HID Gadget
 
 Test that USB ConfigFS is working:
 
 ```bash
-# In NetHunter terminal or Termux with root:
 su
 ls /config/usb_gadget/
 ```
@@ -72,8 +146,27 @@ If the directory exists and contains gadget configurations, USB HID is functiona
 
 In the NetHunter app:
 1. Go to **USB Arsenal**
-2. If it shows "Your kernel does not support USB ConfigFS!" → the kernel was not properly configured (re-check the USB ConfigFS kernel options)
+2. If it shows "Your kernel does not support USB ConfigFS!" → the kernel was not properly configured
 3. If it loads normally → USB HID attacks are ready
+
+### Quick USB HID Test
+
+1. Connect the phone to a target computer via USB
+2. In NetHunter → **HID Attacks** → **DuckyScript**
+3. Enter a simple script:
+   ```
+   DELAY 2000
+   GUI r
+   DELAY 500
+   STRING notepad
+   DELAY 500
+   ENTER
+   DELAY 1000
+   STRING Hello from NetHunter!
+   ```
+4. Tap **Execute** — the target computer should open Notepad and type the text
+
+> **Safety:** Only test USB HID on your own machines. The target computer sees the phone as a keyboard/mouse — there is no way for the target to block this at the OS level.
 
 ## 5. Verify WiFi Monitor Mode
 
@@ -89,61 +182,185 @@ iw dev wlan0 info
 
 If `type monitor` shows in the output, internal WiFi monitor mode is working.
 
+Quick capture test:
+
+```bash
+# Capture packets for 10 seconds
+tcpdump -i wlan0 -c 100 -w /sdcard/capture.pcap
+
+# Or use airodump-ng
+airodump-ng wlan0
+```
+
 ### For MT6655 devices (Phone 2a) with gen4m sniffer patch:
 
-Check if the sniffer mode activates via the gen4m driver interface. The exact method depends on whether the firmware accepts the sniffer command.
+Check if the sniffer mode activates via the gen4m driver interface. The exact method depends on whether the firmware accepts the sniffer command. See the [Phone (2a) guide](phone-2a.md#3-internal-wifi-monitor-mode-experimental) for details.
 
 ### For WCN6750 devices (Phone 3a, 4a):
 
-Internal WiFi monitor mode is not available. Connect an external USB WiFi adapter and verify:
+Internal WiFi monitor mode is not available. Connect an external USB WiFi adapter:
 
 ```bash
 su
-# After plugging in the adapter:
+# After plugging in the adapter via OTG:
 ip link
-# Look for wlan1 or similar
+# Look for wlan1 or similar new interface
 iw dev wlan1 set type monitor
 ip link set wlan1 up
+iw dev wlan1 info
 ```
+
+See [External WiFi Adapters](external-wifi.md) for recommended adapters and driver setup.
 
 ## 6. Install External WiFi Driver (if needed)
 
 If you built `88XXau.ko` (rtl8812au) from your device-specific guide:
 
 ```bash
+# Push the module
 adb push 88XXau.ko /sdcard/
+
+# Load it (temporary — until next reboot)
 adb shell su -c "insmod /sdcard/88XXau.ko"
+
+# Verify the module loaded
+adb shell su -c "lsmod | grep 88XXau"
 ```
 
-To make it persistent across reboots, place it in `/vendor/lib/modules/` or use a Magisk module to load it at boot.
+### Make the Driver Persistent Across Reboots
+
+**Option A: Magisk Module (recommended)**
+
+Create a simple Magisk module that loads the driver at boot:
+
+```bash
+mkdir -p /data/adb/modules/rtl8812au/system/vendor/lib/modules/
+cp /sdcard/88XXau.ko /data/adb/modules/rtl8812au/system/vendor/lib/modules/
+
+# Create module.prop
+cat > /data/adb/modules/rtl8812au/module.prop << 'EOF'
+id=rtl8812au
+name=RTL8812AU WiFi Driver
+version=1.0
+versionCode=1
+author=Nothing-Kali
+description=RTL8812AU driver for external WiFi monitor mode
+EOF
+
+# Create post-fs-data.sh to load the module
+cat > /data/adb/modules/rtl8812au/post-fs-data.sh << 'EOF'
+#!/system/bin/sh
+insmod /vendor/lib/modules/88XXau.ko
+EOF
+chmod 755 /data/adb/modules/rtl8812au/post-fs-data.sh
+```
+
+**Option B: Direct placement**
+
+```bash
+adb shell su -c "mount -o rw,remount /vendor"
+adb shell su -c "cp /sdcard/88XXau.ko /vendor/lib/modules/"
+adb shell su -c "chmod 644 /vendor/lib/modules/88XXau.ko"
+adb shell su -c "mount -o ro,remount /vendor"
+```
+
+## 7. NetHunter KeX (Desktop Mode)
+
+NetHunter KeX provides a full Kali Linux desktop accessible from the phone or remotely:
+
+1. In the NetHunter app → **KeX Manager**
+2. Set a VNC password
+3. Start the KeX server
+4. Connect using:
+   - **On phone:** Install a VNC client (e.g., AVNC) and connect to `localhost:5901`
+   - **From PC:** `vncviewer <phone-ip>:5901`
 
 ## Tools Available in NetHunter Pro
 
 With a properly configured kernel, you have access to:
 
-| Tool | Requires |
-|------|----------|
-| USB HID Keyboard/Mouse attacks | USB ConfigFS ✅ |
-| DuckyScript execution | USB ConfigFS ✅ |
-| RNDIS / USB tethering | USB ConfigFS ✅ |
-| Aircrack-ng / WiFi cracking | Monitor mode WiFi |
-| Wifite / automated WiFi audit | Monitor mode WiFi |
-| Bluetooth tools (Ubertooth) | Ubertooth hardware |
-| Metasploit Framework | Kali chroot ✅ |
-| Nmap / network scanning | Kali chroot ✅ |
-| Burp Suite / web testing | Kali chroot ✅ |
-| NetHunter KeX (desktop) | Kali chroot ✅ |
+| Tool | Requires | Description |
+|------|----------|-------------|
+| USB HID Keyboard/Mouse attacks | USB ConfigFS ✅ | Emulate keyboard/mouse on target machines |
+| DuckyScript execution | USB ConfigFS ✅ | Run automated keystroke injection scripts |
+| RNDIS / USB tethering | USB ConfigFS ✅ | Create a network interface over USB |
+| USB Mass Storage emulation | USB ConfigFS ✅ | Emulate a USB drive |
+| Aircrack-ng / WiFi cracking | Monitor mode WiFi | WPA/WPA2 handshake capture and cracking |
+| Wifite / automated WiFi audit | Monitor mode WiFi | Automated wireless attacks |
+| Kismet / WiFi reconnaissance | Monitor mode WiFi | Passive wireless network discovery |
+| Bluetooth tools (Ubertooth) | Ubertooth hardware | BLE sniffing and analysis |
+| Metasploit Framework | Kali chroot ✅ | Exploitation framework |
+| Nmap / network scanning | Kali chroot ✅ | Network discovery and port scanning |
+| Burp Suite / web testing | Kali chroot ✅ | Web application security testing |
+| SQLMap / SQL injection | Kali chroot ✅ | Automated SQL injection |
+| Responder / LLMNR poisoning | Kali chroot ✅ | Network protocol exploitation |
+| John / Hashcat / cracking | Kali chroot ✅ | Password hash cracking |
+| NetHunter KeX (desktop) | Kali chroot ✅ | Full Kali desktop via VNC |
 
 ## Troubleshooting
 
 ### "Your kernel does not support USB ConfigFS!"
-→ Rebuild kernel with all `CONFIG_USB_CONFIGFS_*` options enabled.
+
+The kernel wasn't built with the required CONFIG options. Rebuild with all `CONFIG_USB_CONFIGFS_*` options enabled. See the [kernel config verification script](../scripts/verify-kernel.sh).
 
 ### WiFi adapter not detected
-→ Check `dmesg | grep -i usb` after plugging in. Make sure the driver module is loaded (`lsmod | grep 88XXau`).
+
+```bash
+# Check USB device enumeration
+dmesg | grep -i usb
+
+# Check if the module loaded
+lsmod | grep 88XXau
+
+# Try manual load
+insmod /path/to/88XXau.ko
+
+# Check kernel log for errors
+dmesg | tail -20
+```
 
 ### Chroot fails to install
-→ Ensure sufficient storage (full chroot needs ~5-10 GB). Try minimal chroot first.
 
-### Monitor mode crashes
-→ Check `dmesg` for kernel panics. For ath12k backports, firmware version mismatch can cause issues — check `/lib/firmware/ath12k/WCN7850/`.
+- Ensure sufficient storage: full chroot needs ~5–10 GB
+- Try minimal chroot first, then install tools individually via `apt`
+- Check `/data/local/nhsystem/` permissions: should be owned by root
+- If download fails, manually download the rootfs from Kali and extract:
+  ```bash
+  wget https://kali.download/nethunter-images/current/rootfs/kalifs-arm64-full.tar.xz
+  adb push kalifs-arm64-full.tar.xz /sdcard/
+  ```
+
+### Monitor mode crashes or fails
+
+```bash
+# Check kernel log for panics/errors
+dmesg | grep -i -E "ath12k|ath11k|wlan|monitor|panic"
+
+# For ath12k: verify firmware version
+ls /vendor/firmware/ath12k/WCN7850/hw2.0/
+cat /vendor/firmware/ath12k/WCN7850/hw2.0/board-2.bin.txt 2>/dev/null
+
+# Check if another process holds the interface
+iw dev
+rfkill list
+```
+
+### NetHunter app shows blank screen / crashes
+
+- Clear app data: `Settings → Apps → NetHunter → Clear Data`
+- Re-flash the NetHunter zip
+- Check if Magisk/KernelSU is properly granting root to the app
+
+### Metasploit database won't start
+
+```bash
+# Inside chroot
+service postgresql start
+msfdb reinit
+```
+
+## Next Steps
+
+- **[External WiFi Adapters](external-wifi.md)** — setup external USB WiFi for guaranteed monitor mode + injection
+- **[Security Considerations](security.md)** — operational security when using NetHunter
+- **[Troubleshooting](troubleshooting.md)** — comprehensive problem-solving guide

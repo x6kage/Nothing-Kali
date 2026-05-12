@@ -13,6 +13,8 @@
 | **Build System** | Kleaf / Bazel |
 | **Monitor Mode** | ⚠️ Experimental — sniffer code exists, disabled for MT6655 |
 
+> **Also applies to:** Phone (2a) Plus (same SoC, kernel, and WiFi chip)
+
 ## Sources
 
 | Repo | Branch |
@@ -25,18 +27,18 @@
 ### Host Requirements
 
 - Ubuntu 22.04+ (x86_64)
-- 100GB+ disk space
-- 16GB+ RAM
+- 100GB+ disk space (MediaTek kernel + modules is large)
+- 16GB+ RAM (32GB recommended for parallel builds)
 
 ### Dependencies
 
 ```bash
 sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev \
   git curl python3 python3-pip lz4 device-tree-compiler zip unzip \
-  repo rsync cpio kmod
+  repo rsync cpio kmod dwarves
 
 # Install Bazel (Kleaf uses Bazel)
-# https://bazel.build/install/ubuntu
+# See https://bazel.build/install/ubuntu for the latest instructions
 sudo apt install -y apt-transport-https gnupg
 curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor >bazel-archive-keyring.gpg
 sudo mv bazel-archive-keyring.gpg /usr/share/keyrings/
@@ -58,6 +60,8 @@ git clone -b mt6886/Pacman/v --depth=1 \
   https://github.com/NothingOSS/android_kernel_modules_nothing_mt6886.git modules
 
 # AOSP Clang r450784e
+./scripts/setup-clang.sh r450784e
+# Or manually:
 mkdir -p prebuilts/clang/host/linux-x86
 cd prebuilts/clang/host/linux-x86
 git clone --depth=1 \
@@ -66,9 +70,31 @@ git clone --depth=1 \
 cd ../../../../
 ```
 
-> **Note:** AOSP clang prebuilts are large. Alternatively, download only the specific clang version tarball from [Android CI](https://ci.android.com/) or use `repo init` with the Android kernel manifest.
+> **Note:** AOSP clang prebuilts are large (~2 GB). Alternatively, download only the specific clang version tarball from [Android CI](https://ci.android.com/) or use `repo init` with the Android kernel manifest.
 
 ## 2. Kernel Configuration
+
+### Understanding MediaTek Kernel Structure
+
+MediaTek kernels differ from Qualcomm in several ways:
+
+```
+kernel/                           # Main kernel tree
+├── arch/arm64/configs/           # Defconfigs
+├── drivers/                      # In-tree drivers
+└── build.config.*                # Build configuration
+
+modules/                          # Out-of-tree vendor modules
+├── connectivity/
+│   └── wlan/
+│       └── core/
+│           └── gen4m/            # ← WiFi driver lives here
+├── gpu/
+├── display/
+└── ...
+```
+
+The WiFi driver is **not in the main kernel tree** — it's compiled as an out-of-tree module from the `modules` repo. This means you need to build both the kernel and the WLAN module separately.
 
 ### USB ConfigFS (NetHunter HID gadget)
 
@@ -86,6 +112,12 @@ CONFIG_USB_CONFIGFS_RNDIS=y
 CONFIG_USB_CONFIGFS_EEM=y
 CONFIG_USB_CONFIGFS_MASS_STORAGE=y
 CONFIG_USB_CONFIGFS_F_HID=y
+```
+
+Or use the helper script after running `make O=out <defconfig>`:
+
+```bash
+../scripts/enable-nethunter-configs.sh . out
 ```
 
 ### Why AOSP Clang, not NDK or GCC?
@@ -109,10 +141,11 @@ The gen4m WLAN driver has sniffer/radiotap support code, but it is **only enable
 
 ```
 modules/connectivity/wlan/core/gen4m/
-├── nic/radiotap.c                  # radiotap header construction
-├── include/nic/radiotap.h          # radiotap structures
+├── nic/radiotap.c                  # Radiotap header construction
+├── include/nic/radiotap.h          # Radiotap structures
 ├── include/config.h                # CFG_SUPPORT_SNIFFER_RADIOTAP flag
 ├── common/wlan_oid.c               # wlanoidSetIcsSniffer() — firmware sniffer command
+├── os/linux/gl_hook_api.c          # Netdev ops including monitor mode
 └── Makefile                        # CONFIG_SNIFFER_RADIOTAP gated under MT6985 only
 ```
 
@@ -134,11 +167,34 @@ This enables:
 - Compilation of `radiotap.o` into the module
 - Firmware sniffer command path (`MCU_UNI_CMD_SNIFFER`)
 
+### What the code path does
+
+When sniffer mode is enabled:
+
+1. **Driver side:** `wlanoidSetIcsSniffer()` sends `MCU_UNI_CMD_SNIFFER` to the WiFi firmware
+2. **Firmware side:** If the firmware supports it, the chip switches to sniffer mode and delivers raw 802.11 frames with radiotap headers
+3. **Kernel side:** `radiotap.c` constructs proper radiotap headers for tools like `tcpdump` and `airodump-ng`
+
 ### Caveats
 
-- **Firmware acceptance is unconfirmed.** The driver sends `MCU_UNI_CMD_SNIFFER` to firmware, but MT6655 firmware may silently ignore it.
-- **Packet injection (TX)** is almost certainly unsupported without firmware RE.
-- **Fallback:** External USB WiFi adapter (see below).
+- **Firmware acceptance is unconfirmed.** The driver sends `MCU_UNI_CMD_SNIFFER` to firmware, but MT6655 firmware may silently ignore it or return an error.
+- **No error logging by default.** Add debug prints around `wlanoidSetIcsSniffer()` to see if the command succeeds:
+  ```c
+  // In wlan_oid.c, after sending the command:
+  DBGLOG(INIT, INFO, "Sniffer command result: %d\n", rStatus);
+  ```
+- **Packet injection (TX) is almost certainly unsupported** without firmware reverse engineering.
+- **Testing method:** After enabling and building, try:
+  ```bash
+  su
+  # Check if the driver exposes sniffer capability
+  cat /proc/net/wlan/status
+  # Try setting monitor mode via iw
+  ip link set wlan0 down
+  iw dev wlan0 set type monitor
+  ip link set wlan0 up
+  ```
+- **Fallback:** If monitor mode doesn't work, use an external USB WiFi adapter (see [External WiFi Adapters](external-wifi.md)).
 
 ## 4. Build Kernel
 
@@ -172,7 +228,18 @@ export PATH=${CLANG_PREBUILT_BIN}:${PATH}
 build/build.sh
 ```
 
+### MediaTek-Specific Build Troubleshooting
+
+| Issue | Fix |
+|-------|-----|
+| `MTK_PLATFORM not defined` | Check `build.config.*` for the correct platform variable |
+| `Cannot find DTS include` | MediaTek DTS files may be in `arch/arm64/boot/dts/mediatek/` — check includes |
+| Module version mismatch | Ensure kernel and modules repos are from the same branch/tag |
+| `CONFIG_MTK_*` errors | These are MediaTek vendor configs — check the defconfig for correct values |
+
 ## 5. Build WLAN Module
+
+The WiFi driver must be built separately against the compiled kernel:
 
 ```bash
 cd modules/connectivity/wlan/core/gen4m
@@ -191,12 +258,33 @@ make -C ${KERNEL_SRC} M=$(pwd) \
 
 Output: `wlan_drv_gen4m.ko`
 
+### Verify the module
+
+```bash
+# Check the module was built
+ls -la wlan_drv_gen4m.ko
+
+# Check module info
+modinfo wlan_drv_gen4m.ko
+
+# If sniffer was enabled, check for the radiotap symbol
+nm wlan_drv_gen4m.ko | grep -i radiotap
+# Should show radiotap-related symbols if CONFIG_SNIFFER_RADIOTAP=y was effective
+```
+
 ## 6. Flash
 
 Phone (2a) uses **`init_boot`** for kernel images:
 
 ```bash
+# Step 1: Backup current init_boot (do this ONCE before first flash)
+adb shell su -c "dd if=/dev/block/by-name/init_boot_a of=/sdcard/stock_init_boot_a.img"
+adb pull /sdcard/stock_init_boot_a.img
+
+# Step 2: Reboot to bootloader
 adb reboot bootloader
+
+# Step 3: Flash the built kernel
 fastboot flash init_boot <path-to-built-init_boot.img>
 fastboot reboot
 ```
@@ -212,13 +300,38 @@ adb shell su -c "mount -o ro,remount /vendor"
 adb reboot
 ```
 
-## 7. Install NetHunter Pro
+> **Important:** Back up the original `wlan_drv_gen4m.ko` before replacing:
+> ```bash
+> adb shell su -c "cp /vendor/lib/modules/wlan_drv_gen4m.ko /sdcard/stock_wlan_drv_gen4m.ko"
+> adb pull /sdcard/stock_wlan_drv_gen4m.ko
+> ```
+
+## 7. Post-Flash Verification
+
+```bash
+# Check kernel version
+adb shell uname -r
+
+# Verify USB ConfigFS
+adb shell su -c "ls /config/usb_gadget/"
+
+# Verify WLAN module loaded
+adb shell su -c "lsmod | grep wlan"
+
+# Check WiFi is working (normal mode)
+adb shell su -c "ip link show wlan0"
+
+# If sniffer patch was applied, check kernel log for radiotap
+adb shell su -c "dmesg | grep -i radiotap"
+```
+
+## 8. Install NetHunter Pro
 
 See [NetHunter Pro Installation](nethunter-install.md).
 
-## 8. External WiFi Adapter (Fallback)
+## 9. External WiFi Adapter (Fallback)
 
-If internal WiFi monitor mode does not work, cross-compile rtl8812au against your built kernel:
+If internal WiFi monitor mode does not work (expected for MT6655), cross-compile rtl8812au against your built kernel:
 
 ```bash
 git clone https://github.com/aircrack-ng/rtl8812au.git
@@ -230,3 +343,5 @@ make ARCH=arm64 LLVM=1 \
 ```
 
 Output: `88XXau.ko` — load after connecting an RTL8812AU-based USB adapter via OTG.
+
+See [External WiFi Adapters](external-wifi.md) for recommended adapters and detailed setup.
