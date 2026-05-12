@@ -12,6 +12,8 @@
 | **Build System** | Kleaf / Bazel |
 | **Monitor Mode** | ❌ Blocked — firmware limitation, no upstream workaround |
 
+> **Same platform as Phone (4a).** The Phone (4a) (codename Frogger) uses the same SoC and WiFi chip but with a different kernel branch. See [Phone (4a)](phone-4a.md) for the differences.
+
 ## Sources
 
 | Repo | Branch |
@@ -29,28 +31,85 @@ The WCN6750 WiFi chip has `supports_monitor = false` in the ath11k driver. This 
 
 This is a **firmware limitation** — the WCN6750 firmware does not implement the monitor mode HAL interface. Unlike WCN7850 (ath12k), no upstream patches exist to enable it.
 
-**Internal WiFi monitor mode is not possible.** An external USB WiFi adapter is required for wireless pentesting.
+### Why Can't We Just Flip the Flag?
 
-NetHunter Pro is still valuable for: USB HID attacks (DuckyScript, keyboard/mouse emulation), Kali chroot tools (Metasploit, Nmap, Burp), and Bluetooth attacks.
+Unlike the WCN7850 where upstream patches provide a complete monitor mode implementation, the WCN6750's limitation is deeper:
+
+- The firmware doesn't expose monitor mode ring descriptors
+- The HAL (Hardware Abstraction Layer) interface for monitor mode is not implemented in firmware
+- Flipping `supports_monitor = true` would cause the driver to initialize monitor rings that the firmware doesn't understand, leading to crashes
+
+### What Still Works Without Monitor Mode
+
+**Internal WiFi monitor mode is not possible.** However, NetHunter Pro is still highly valuable:
+
+| Feature | Status | Details |
+|---------|:------:|---------|
+| USB HID attacks (DuckyScript) | ✅ | Full keyboard/mouse emulation |
+| USB RNDIS networking | ✅ | Network over USB cable |
+| Kali chroot (Metasploit, Nmap, etc.) | ✅ | Full Kali Linux toolset |
+| NetHunter KeX (desktop) | ✅ | Full desktop via VNC |
+| External USB WiFi (monitor + inject) | ✅ | Via USB OTG adapter |
+| Bluetooth attacks (Ubertooth) | ✅ | Via Ubertooth USB hardware |
+| Internal WiFi (managed mode) | ✅ | Normal WiFi works as usual |
 
 ## 1. Build Environment
+
+### Host Requirements
+
+- Ubuntu 22.04+ (x86_64)
+- 120GB+ disk space
+- 16GB+ RAM (32GB recommended for parallel builds)
+
+### Dependencies
 
 ```bash
 sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev \
   git curl python3 python3-pip lz4 device-tree-compiler zip unzip \
-  repo rsync cpio kmod bazel
+  repo rsync cpio kmod dwarves bazel
+```
 
+### Fetch Source
+
+```bash
 mkdir nothing-3a-kernel && cd nothing-3a-kernel
 
 git clone -b sm7635/b/mr --depth=1 \
   https://github.com/NothingOSS/android_kernel_msm-6.1_nothing_sm7635.git kernel
 
 # AOSP Clang r487747c
+# If you cloned the Nothing-Kali repo, use:
+#   path/to/Nothing-Kali/scripts/setup-clang.sh r487747c
+# Or manually:
 mkdir -p prebuilts/clang/host/linux-x86
 # Download from https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/
 ```
 
-## 2. Kernel Configuration — USB ConfigFS
+## 2. Kernel Configuration
+
+### Defconfig
+
+Phone (3a) uses the Qualcomm `pineapple` platform. The defconfig is assembled from layers:
+
+```
+gki_defconfig                              # GKI base
+  + vendor/pineapple_GKI.config            # Qualcomm pineapple platform config
+  + vendor/Asteroids.config                # Nothing Phone (3a) device config
+```
+
+With Kleaf/Bazel, the build system assembles this automatically. For legacy `make` builds:
+
+```bash
+make O=out gki_defconfig
+./scripts/kconfig/merge_config.sh -m -O out \
+  out/.config \
+  arch/arm64/configs/vendor/pineapple_GKI.config \
+  arch/arm64/configs/vendor/Asteroids.config
+```
+
+> **Phone (3a) Pro** uses `AsteroidsPro.config` instead. Check `arch/arm64/configs/vendor/` for the exact name.
+
+### USB ConfigFS (NetHunter HID gadget)
 
 ```
 CONFIG_USB_CONFIGFS=y
@@ -66,40 +125,99 @@ CONFIG_USB_CONFIGFS_MASS_STORAGE=y
 CONFIG_USB_CONFIGFS_F_HID=y
 ```
 
+After loading the defconfig:
+
+```bash
+./scripts/enable-nethunter-configs.sh . out
+```
+
 ## 3. Build Kernel
+
+### Using Kleaf/Bazel (recommended)
+
+```bash
+cd kernel
+
+# Build for pineapple (SM7635) platform, gki variant
+python3 build_with_bazel.py -t pineapple gki
+```
+
+Output lands in `out/msm-kernel-pineapple-gki/dist/`.
+
+### Using legacy make (fallback)
 
 ```bash
 cd kernel
 
 export ROOT_DIR=$(pwd)/..
-export KERNEL_DIR=kernel
 export LLVM=1
 export ARCH=arm64
 export CLANG_PREBUILT_BIN=${ROOT_DIR}/prebuilts/clang/host/linux-x86/clang-r487747c/bin
 export PATH=${CLANG_PREBUILT_BIN}:${PATH}
 
-# Kleaf/Bazel
-python3 build_with_bazel.py
+# Assemble defconfig
+make O=out gki_defconfig
+./scripts/kconfig/merge_config.sh -m -O out \
+  out/.config \
+  arch/arm64/configs/vendor/pineapple_GKI.config \
+  arch/arm64/configs/vendor/Asteroids.config
 
-# or legacy:
-# build/build.sh
+# Enable NetHunter configs
+./scripts/enable-nethunter-configs.sh . out
+
+# Build
+make O=out -j$(nproc)
+```
+
+### Build Output Verification
+
+```bash
+# Check output files
+ls -la out/dist/init_boot.img 2>/dev/null || ls -la out/arch/arm64/boot/Image*
+
+# Verify USB ConfigFS is in the config
+grep "CONFIG_USB_CONFIGFS_F_HID" out/.config
+# Expected: CONFIG_USB_CONFIGFS_F_HID=y
+
+# Use verification script
+../scripts/verify-kernel.sh out
 ```
 
 ## 4. Flash
 
 ```bash
+# Backup (do this ONCE before first custom kernel flash)
+adb shell su -c "dd if=/dev/block/by-name/init_boot_a of=/sdcard/stock_init_boot_a.img"
+adb pull /sdcard/stock_init_boot_a.img
+
+# Flash
 adb reboot bootloader
 fastboot flash init_boot out/dist/init_boot.img
 fastboot reboot
 ```
 
-## 5. Install NetHunter Pro
+## 5. Post-Flash Verification
+
+```bash
+# Check kernel version changed
+adb shell uname -r
+
+# Verify USB ConfigFS is available
+adb shell su -c "ls /config/usb_gadget/"
+
+# Verify WiFi still works (managed mode)
+adb shell su -c "iw dev wlan0 info"
+```
+
+## 6. Install NetHunter Pro
 
 See [NetHunter Pro Installation](nethunter-install.md).
 
-## 6. External WiFi Adapter (Required for WiFi attacks)
+## 7. External WiFi Adapter (Required for WiFi Attacks)
 
-Since internal WiFi does not support monitor mode, an external USB adapter is mandatory.
+Since internal WiFi does not support monitor mode, an external USB adapter is mandatory for wireless penetration testing.
+
+### Build rtl8812au Driver
 
 ```bash
 git clone https://github.com/aircrack-ng/rtl8812au.git
@@ -112,6 +230,8 @@ make ARCH=arm64 LLVM=1 \
 
 Output: `88XXau.ko`
 
+### Load and Test
+
 ```bash
 # After connecting adapter via USB OTG:
 adb push 88XXau.ko /sdcard/
@@ -119,12 +239,16 @@ adb shell su -c "insmod /sdcard/88XXau.ko"
 adb shell su -c "ip link"        # look for wlan1
 adb shell su -c "iw dev wlan1 set type monitor"
 adb shell su -c "ip link set wlan1 up"
+adb shell su -c "iw dev wlan1 info"   # should show type: monitor
 ```
 
 ### Recommended USB WiFi Adapters
 
-| Adapter | Chipset | Driver | Monitor + Inject |
-|---------|---------|--------|:---:|
-| Alfa AWUS036ACH | RTL8812AU | rtl8812au | ✅ |
-| Alfa AWUS036ACM | MT7612U | mt76 | ✅ |
-| Panda PAU09 | RT5572 | rt2800usb | ✅ |
+| Adapter | Chipset | Driver | Monitor + Inject | Notes |
+|---------|---------|--------|:---:|-------|
+| Alfa AWUS036ACH | RTL8812AU | rtl8812au | ✅ | Best for dual-band, high power |
+| Alfa AWUS036ACHM | RTL8812AU | rtl8812au | ✅ | Smaller form factor |
+| Alfa AWUS036ACM | MT7612U | mt76 | ✅ | Good kernel support |
+| Panda PAU09 | RT5572 | rt2800usb | ✅ | Budget option |
+
+See [External WiFi Adapters](external-wifi.md) for detailed setup and comparison.
