@@ -60,7 +60,8 @@ git clone -b mt6886/Pacman/v --depth=1 \
   https://github.com/NothingOSS/android_kernel_modules_nothing_mt6886.git modules
 
 # AOSP Clang r450784e
-./scripts/setup-clang.sh r450784e
+# If you cloned the Nothing-Kali repo, use:
+#   path/to/Nothing-Kali/scripts/setup-clang.sh r450784e
 # Or manually:
 mkdir -p prebuilts/clang/host/linux-x86
 cd prebuilts/clang/host/linux-x86
@@ -96,9 +97,23 @@ modules/                          # Out-of-tree vendor modules
 
 The WiFi driver is **not in the main kernel tree** — it's compiled as an out-of-tree module from the `modules` repo. This means you need to build both the kernel and the WLAN module separately.
 
+### Defconfig
+
+Phone (2a) uses `gki_defconfig` as specified in `build.config.gki`:
+
+```
+DEFCONFIG=gki_defconfig
+```
+
+The MTK build system (Kleaf) uses `gki_defconfig` directly. For legacy `make` builds:
+
+```bash
+make O=out gki_defconfig
+```
+
 ### USB ConfigFS (NetHunter HID gadget)
 
-Add or enable in your defconfig (check `arch/arm64/configs/`):
+After loading the defconfig, enable ConfigFS:
 
 ```
 CONFIG_USB_CONFIGFS=y

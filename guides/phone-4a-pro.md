@@ -73,7 +73,8 @@ git clone -b sm7750/b/FroggerPro --depth=1 \
   https://github.com/NothingOSS/android_kernel_msm-6.6_nothing_sm7750.git kernel
 
 # AOSP Clang r510928 (same as Phone 3)
-./scripts/setup-clang.sh r510928
+# If you cloned the Nothing-Kali repo, use:
+#   path/to/Nothing-Kali/scripts/setup-clang.sh r510928
 # Or manually:
 mkdir -p prebuilts/clang/host/linux-x86
 # Download from https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/
@@ -81,7 +82,17 @@ mkdir -p prebuilts/clang/host/linux-x86
 
 ## 2. Kernel Configuration
 
-### USB ConfigFS
+### Defconfig
+
+Phone (4a) Pro uses the Qualcomm `sun` platform (same as Phone 3). The defconfig is assembled from:
+
+```
+gki_defconfig                          # GKI base
+  + vendor/sun_perf.config             # Qualcomm sun platform config
+  + vendor/FroggerPro.config           # Nothing Phone (4a) Pro device config
+```
+
+### USB ConfigFS (NetHunter HID gadget)
 
 ```
 CONFIG_USB_CONFIGFS=y
@@ -100,8 +111,7 @@ CONFIG_USB_CONFIGFS_F_HID=y
 After loading defconfig:
 
 ```bash
-make O=out <defconfig>
-../scripts/enable-nethunter-configs.sh . out
+./scripts/enable-nethunter-configs.sh . out
 ```
 
 ### Monitor Mode Patches
@@ -123,21 +133,40 @@ Follow the identical procedure from [Phone (3) — Enable WCN7850 Monitor Mode](
 
 ## 3. Build Kernel
 
+### Using Kleaf/Bazel (recommended)
+
+```bash
+cd kernel
+
+# Build for sun (SM7750) platform, perf variant
+python3 build_with_bazel.py -t sun perf
+```
+
+Output lands in `out/msm-kernel-sun-perf/dist/`.
+
+### Using legacy make (fallback)
+
 ```bash
 cd kernel
 
 export ROOT_DIR=$(pwd)/..
-export KERNEL_DIR=kernel
 export LLVM=1
 export ARCH=arm64
 export CLANG_PREBUILT_BIN=${ROOT_DIR}/prebuilts/clang/host/linux-x86/clang-r510928/bin
 export PATH=${CLANG_PREBUILT_BIN}:${PATH}
 
-# Kleaf/Bazel (recommended)
-python3 build_with_bazel.py
+# Assemble defconfig
+make O=out gki_defconfig
+./scripts/kconfig/merge_config.sh -m -O out \
+  out/.config \
+  arch/arm64/configs/vendor/sun_perf.config \
+  arch/arm64/configs/vendor/FroggerPro.config
 
-# or legacy fallback:
-# build/build.sh
+# Enable NetHunter configs
+./scripts/enable-nethunter-configs.sh . out
+
+# Build
+make O=out -j$(nproc)
 ```
 
 ### Verify the Build

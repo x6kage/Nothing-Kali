@@ -48,7 +48,8 @@ git clone -b sm8735/b/mr --depth=1 \
   https://github.com/NothingOSS/android_kernel_msm-6.6_nothing_sm8735.git kernel
 
 # AOSP Clang r510928
-./scripts/setup-clang.sh r510928
+# If you cloned the Nothing-Kali repo, use:
+#   path/to/Nothing-Kali/scripts/setup-clang.sh r510928
 # Or manually:
 mkdir -p prebuilts/clang/host/linux-x86
 # Download r510928 from https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/
@@ -63,9 +64,36 @@ The kernel config specifies `LLVM=1` and `CLANG_VERSION=r510928`. This is **not*
 - **AOSP prebuilt clang** is a bare-metal compiler configured for kernel builds, matching what Nothing/Qualcomm used to build and test the stock kernel.
 - GKI (Generic Kernel Image) kernels enforce KMI symbol checking — using a different compiler can break KMI compatibility, preventing vendor modules from loading.
 
-## 2. Kernel Configuration — USB ConfigFS
+## 2. Kernel Configuration
 
-Add to defconfig:
+### Defconfig
+
+Phone (3) uses the Qualcomm `sun` platform. The defconfig is assembled from layers:
+
+```
+gki_defconfig                          # GKI base (in arch/arm64/configs/)
+  + vendor/sun_perf.config             # Qualcomm sun platform config
+  + vendor/Metroid.config              # Nothing Phone (3) device config
+```
+
+With Kleaf/Bazel (recommended), the build system assembles the defconfig automatically when you specify the correct target (`sun`) and variant (`perf`).
+
+For legacy `make` builds, assemble manually:
+
+```bash
+# Start with GKI base
+make O=out gki_defconfig
+
+# Merge vendor fragments
+./scripts/kconfig/merge_config.sh -m -O out \
+  out/.config \
+  arch/arm64/configs/vendor/sun_perf.config \
+  arch/arm64/configs/vendor/Metroid.config
+```
+
+### USB ConfigFS (NetHunter HID gadget)
+
+After loading the defconfig, enable USB ConfigFS:
 
 ```
 CONFIG_USB_CONFIGFS=y
@@ -84,8 +112,7 @@ CONFIG_USB_CONFIGFS_F_HID=y
 Or use the helper script:
 
 ```bash
-make O=out <defconfig>
-../scripts/enable-nethunter-configs.sh . out
+./scripts/enable-nethunter-configs.sh . out
 ```
 
 ## 3. Enable WCN7850 Monitor Mode
@@ -242,32 +269,70 @@ If the firmware version differs significantly, monitor mode may not work or may 
 
 ## 4. Build Kernel
 
-### Using Kleaf/Bazel
+### Using Kleaf/Bazel (recommended)
 
 ```bash
 cd kernel
 
-export ROOT_DIR=$(pwd)/..
-export KERNEL_DIR=kernel
-
-# Qualcomm kernels may use build_with_bazel.py
-python3 build_with_bazel.py
+# Build for sun (SM8735) platform, perf variant
+python3 build_with_bazel.py -t sun perf
 ```
 
-### Using build.sh (legacy)
+The output lands in `out/msm-kernel-sun-perf/dist/`. Look for `init_boot.img` or `boot.img`.
+
+### Using legacy make (fallback)
+
+If Bazel doesn't work:
 
 ```bash
 cd kernel
 
 export ROOT_DIR=$(pwd)/..
-export KERNEL_DIR=kernel
 export LLVM=1
 export ARCH=arm64
 export CLANG_PREBUILT_BIN=${ROOT_DIR}/prebuilts/clang/host/linux-x86/clang-r510928/bin
 export PATH=${CLANG_PREBUILT_BIN}:${PATH}
 
-build/build.sh
+# Assemble defconfig
+make O=out gki_defconfig
+./scripts/kconfig/merge_config.sh -m -O out \
+  out/.config \
+  arch/arm64/configs/vendor/sun_perf.config \
+  arch/arm64/configs/vendor/Metroid.config
+
+# Enable NetHunter configs
+./scripts/enable-nethunter-configs.sh . out
+
+# Build
+make O=out -j$(nproc)
 ```
+
+### Generating init_boot.img from legacy make
+
+If you built with `make` instead of Bazel, the build system may not produce `init_boot.img` automatically. You need `mkbootimg`:
+
+```bash
+# Install mkbootimg (from Android platform tools or build tools)
+pip install mkbootimg
+# or clone: git clone https://android.googlesource.com/platform/system/tools/mkbootimg
+
+# Create init_boot.img
+mkbootimg \
+  --header_version 4 \
+  --kernel out/arch/arm64/boot/Image.lz4 \
+  --output out/init_boot.img
+
+# Alternatively, use the stock init_boot as a template:
+# Extract stock init_boot, replace kernel, repack
+unpack_bootimg --boot_img stock_init_boot.img --out stock_parts/
+mkbootimg \
+  --header_version 4 \
+  --kernel out/arch/arm64/boot/Image.lz4 \
+  --ramdisk stock_parts/ramdisk \
+  --output out/init_boot.img
+```
+
+> **Note:** GKI init_boot format varies by device. If in doubt, use `unpack_bootimg` on the stock image to check the exact format, then repack with your custom kernel.
 
 ### Qualcomm-Specific Build Notes
 

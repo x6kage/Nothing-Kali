@@ -160,24 +160,28 @@ The NDK ships a clang configured for userspace (linked against Bionic libc, with
 
 **Problem:** You don't know which defconfig file to use.
 
-**Fix:**
+**Fix:** GKI kernels use `gki_defconfig` as a base, with **vendor config fragments** layered on top. The exact fragments vary per device:
+
+| Device | Base | Platform Fragment | Device Fragment |
+|--------|------|-------------------|-----------------|
+| Phone (2a) | `gki_defconfig` | (MTK Kleaf handles this) | — |
+| Phone (3) | `gki_defconfig` | `vendor/sun_perf.config` | `vendor/Metroid.config` |
+| Phone (3a) | `gki_defconfig` | `vendor/pineapple_GKI.config` | `vendor/Asteroids.config` |
+| Phone (4a) | `gki_defconfig` | `vendor/pineapple_GKI.config` | `vendor/Frogger.config` |
+| Phone (4a) Pro | `gki_defconfig` | `vendor/sun_perf.config` | `vendor/FroggerPro.config` |
+
+With Kleaf/Bazel (recommended), the build system assembles the defconfig automatically. For legacy `make`, merge manually:
 
 ```bash
-# List available defconfigs
-ls arch/arm64/configs/ | grep -i -E 'nothing|vendor|gki|pacman|metroid|asteroids|frogger'
-
-# Check build.config for the canonical defconfig
-cat build.config.* | grep -i defconfig
+# Example for Phone (3):
+make O=out gki_defconfig
+./scripts/kconfig/merge_config.sh -m -O out \
+  out/.config \
+  arch/arm64/configs/vendor/sun_perf.config \
+  arch/arm64/configs/vendor/Metroid.config
 ```
 
-GKI kernels typically use `gki_defconfig` as a base with vendor fragments layered on top:
-
-```bash
-# Base + vendor fragment
-make O=out gki_defconfig vendor/nothing_defconfig
-```
-
-If no defconfig is found, extract from a running device:
+If vendor fragments are missing from your source tree, extract the running config from the device:
 
 ```bash
 adb shell su -c "cat /proc/config.gz" | gunzip > running_config
@@ -196,14 +200,18 @@ NothingOSS kernels use Kleaf (a Bazel-based build system from Google). It wraps 
 
 **If Bazel works (recommended):**
 
+For **MediaTek (Phone 2a)**:
 ```bash
 tools/bazel run //common:kernel_aarch64_dist
 ```
 
-Some Qualcomm kernels may use a Python wrapper:
-
+For **Qualcomm (Phone 3, 3a, 4a, 4a Pro)** — uses `build_with_bazel.py` with `-t TARGET VARIANT`:
 ```bash
-python3 build_with_bazel.py
+# Phone (3) / Phone (4a) Pro — "sun" platform
+python3 build_with_bazel.py -t sun perf
+
+# Phone (3a) / Phone (4a) — "pineapple" platform
+python3 build_with_bazel.py -t pineapple gki
 ```
 
 **If Bazel fails (legacy fallback):**

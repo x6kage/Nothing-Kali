@@ -78,13 +78,38 @@ git clone -b sm7635/b/mr --depth=1 \
   https://github.com/NothingOSS/android_kernel_msm-6.1_nothing_sm7635.git kernel
 
 # AOSP Clang r487747c
-./scripts/setup-clang.sh r487747c
+# If you cloned the Nothing-Kali repo, use:
+#   path/to/Nothing-Kali/scripts/setup-clang.sh r487747c
 # Or manually:
 mkdir -p prebuilts/clang/host/linux-x86
 # Download from https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/
 ```
 
-## 2. Kernel Configuration — USB ConfigFS
+## 2. Kernel Configuration
+
+### Defconfig
+
+Phone (3a) uses the Qualcomm `pineapple` platform. The defconfig is assembled from layers:
+
+```
+gki_defconfig                              # GKI base
+  + vendor/pineapple_GKI.config            # Qualcomm pineapple platform config
+  + vendor/Asteroids.config                # Nothing Phone (3a) device config
+```
+
+With Kleaf/Bazel, the build system assembles this automatically. For legacy `make` builds:
+
+```bash
+make O=out gki_defconfig
+./scripts/kconfig/merge_config.sh -m -O out \
+  out/.config \
+  arch/arm64/configs/vendor/pineapple_GKI.config \
+  arch/arm64/configs/vendor/Asteroids.config
+```
+
+> **Phone (3a) Pro** uses `AsteroidsPro.config` instead. Check `arch/arm64/configs/vendor/` for the exact name.
+
+### USB ConfigFS (NetHunter HID gadget)
 
 ```
 CONFIG_USB_CONFIGFS=y
@@ -103,21 +128,7 @@ CONFIG_USB_CONFIGFS_F_HID=y
 After loading the defconfig:
 
 ```bash
-make O=out <defconfig>
-../scripts/enable-nethunter-configs.sh . out
-```
-
-### Finding the Defconfig
-
-```bash
-# List available defconfigs for this device
-ls arch/arm64/configs/ | grep -i -E 'asteroids|sm7635|gki|vendor'
-
-# Check build config for canonical defconfig
-cat build.config.* | grep -i defconfig
-
-# If unsure, extract from running device
-adb shell su -c "cat /proc/config.gz" | gunzip > running_config
+./scripts/enable-nethunter-configs.sh . out
 ```
 
 ## 3. Build Kernel
@@ -127,18 +138,35 @@ adb shell su -c "cat /proc/config.gz" | gunzip > running_config
 ```bash
 cd kernel
 
+# Build for pineapple (SM7635) platform, gki variant
+python3 build_with_bazel.py -t pineapple gki
+```
+
+Output lands in `out/msm-kernel-pineapple-gki/dist/`.
+
+### Using legacy make (fallback)
+
+```bash
+cd kernel
+
 export ROOT_DIR=$(pwd)/..
-export KERNEL_DIR=kernel
 export LLVM=1
 export ARCH=arm64
 export CLANG_PREBUILT_BIN=${ROOT_DIR}/prebuilts/clang/host/linux-x86/clang-r487747c/bin
 export PATH=${CLANG_PREBUILT_BIN}:${PATH}
 
-# Kleaf/Bazel
-python3 build_with_bazel.py
+# Assemble defconfig
+make O=out gki_defconfig
+./scripts/kconfig/merge_config.sh -m -O out \
+  out/.config \
+  arch/arm64/configs/vendor/pineapple_GKI.config \
+  arch/arm64/configs/vendor/Asteroids.config
 
-# or legacy:
-# build/build.sh
+# Enable NetHunter configs
+./scripts/enable-nethunter-configs.sh . out
+
+# Build
+make O=out -j$(nproc)
 ```
 
 ### Build Output Verification
