@@ -1,198 +1,198 @@
-# macOS 環境セットアップ
+# macOS Environment Setup
 
-macOSからNothing phoneにNetHunter Pro用カスタムカーネルをビルド・フラッシュするためのガイド。
+A guide for building and flashing a custom kernel for NetHunter Pro onto a Nothing phone from macOS.
 
-## 概要: 何にmacOSネイティブを使い、何にLinux VMが必要か
+## Overview: What Requires Native macOS vs. a Linux VM
 
-| 作業 | macOS単体 | Linux VM / Docker |
+| Task | macOS Only | Linux VM / Docker |
 |------|:---:|:---:|
-| adb / fastboot (フラッシュ) | ✅ | ✅ |
-| ブートローダーアンロック | ✅ | ✅ |
-| NetHunter Pro zipの転送 | ✅ | ✅ |
-| **カーネルビルド** | ❌ | ✅ |
-| **カーネルモジュールビルド** | ❌ | ✅ |
-| **rtl8812auビルド** | ❌ | ✅ |
+| adb / fastboot (flashing) | ✅ | ✅ |
+| Bootloader unlock | ✅ | ✅ |
+| NetHunter Pro zip transfer | ✅ | ✅ |
+| **Kernel build** | ❌ | ✅ |
+| **Kernel module build** | ❌ | ✅ |
+| **rtl8812au build** | ❌ | ✅ |
 
-カーネルビルドにはLinux x86_64環境が必須 (AOSP clangがLinuxバイナリのため)。macOSではadb/fastbootによるフラッシュとNetHunterインストールが可能。
+A Linux x86_64 environment is required for kernel builds (because AOSP clang ships as a Linux binary). macOS can be used for flashing via adb/fastboot and installing NetHunter.
 
-> **Apple Silicon (M1/M2/M3/M4) の注意:** カーネルビルドのクロスコンパイラはx86_64 Linux向け。Apple Siliconではx86_64 Linux VM (UTM/OrbStack等) またはクラウドビルド環境が必要。
+> **Apple Silicon (M1/M2/M3/M4) note:** The kernel build cross-compiler targets x86_64 Linux. On Apple Silicon, an x86_64 Linux VM (UTM/OrbStack, etc.) or a cloud build environment is required.
 
-## 1. ADB / Fastboot のインストール
+## 1. Installing ADB / Fastboot
 
-### Homebrew経由 (推奨)
+### Via Homebrew (Recommended)
 
 ```bash
-# Homebrewがなければインストール
+# Install Homebrew if not already present
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-# Android Platform Toolsをインストール
+# Install Android Platform Tools
 brew install android-platform-tools
 
-# 確認
+# Verify
 adb version
 fastboot --version
 ```
 
-### 手動インストール
+### Manual Installation
 
-1. [Android SDK Platform Tools for macOS](https://developer.android.com/tools/releases/platform-tools) をダウンロード
-2. 展開して任意の場所に配置 (例: `~/Library/Android/platform-tools`)
-3. PATHに追加:
+1. Download [Android SDK Platform Tools for macOS](https://developer.android.com/tools/releases/platform-tools)
+2. Extract and place in a location of your choice (e.g., `~/Library/Android/platform-tools`)
+3. Add to PATH:
    ```bash
-   # ~/.zshrc に追加
+   # Add to ~/.zshrc
    export PATH="$HOME/Library/Android/platform-tools:$PATH"
    ```
-4. `source ~/.zshrc` で反映
+4. Apply with `source ~/.zshrc`
 
-### USB接続の確認
+### Verifying the USB Connection
 
-macOSはドライバ不要でadb/fastbootが動作する:
+macOS does not require additional drivers for adb/fastboot to work:
 
 ```bash
-# デバイスを接続し、USBデバッグを有効にした状態で
+# With the device connected and USB debugging enabled
 adb devices
 ```
 
-`unauthorized` と出る場合は端末側でUSBデバッグ許可を承認する。
+If it shows `unauthorized`, approve the USB debugging prompt on the phone.
 
-> **USB-C to USB-C ケーブルの注意:** 一部のUSB-Cケーブルはデータ非対応。adbが認識しない場合はUSB-A to USB-Cケーブルを試す。
+> **USB-C to USB-C cable note:** Some USB-C cables do not support data transfer. If adb does not recognize the device, try a USB-A to USB-C cable instead.
 
-## 2. カーネルビルド環境
+## 2. Kernel Build Environment
 
-### 方法A: OrbStack (推奨 — Apple Silicon対応)
+### Method A: OrbStack (Recommended — Apple Silicon Compatible)
 
-[OrbStack](https://orbstack.dev/) は軽量なLinux VM + Docker環境。Apple Siliconでもx86_64エミュレーション可能。
+[OrbStack](https://orbstack.dev/) provides a lightweight Linux VM + Docker environment. It supports x86_64 emulation on Apple Silicon.
 
 ```bash
-# OrbStackインストール後
+# After installing OrbStack
 orb create ubuntu kernel-build --arch amd64
 
-# VMに入る
+# Enter the VM
 orb shell kernel-build
 
-# ビルド環境セットアップ (VM内)
+# Set up the build environment (inside the VM)
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev \
   git curl python3 python3-pip lz4 device-tree-compiler zip unzip \
   repo rsync cpio kmod dwarves
 ```
 
-> **注意:** `--arch amd64` は必須。AOSP clangプリビルトはx86_64 Linuxバイナリ。ARM64 Linux VMでは動かない。Apple SiliconではRosetta変換により動作するが、ビルド速度は低下する。
+> **Note:** `--arch amd64` is required. The AOSP clang prebuilts are x86_64 Linux binaries and will not run in an ARM64 Linux VM. On Apple Silicon, they run via Rosetta translation, but build speed will be reduced.
 
-### 方法B: UTM (無料)
+### Method B: UTM (Free)
 
-[UTM](https://mac.getutm.app/) で Ubuntu 22.04 x86_64 VMを作成:
+Create an Ubuntu 22.04 x86_64 VM using [UTM](https://mac.getutm.app/):
 
-1. UTMをダウンロード・インストール
-2. Ubuntu 22.04 Server (amd64) ISOをダウンロード
-3. 新規VM作成:
-   - **Emulate** (Apple Silicon) または **Virtualize** (Intel Mac)
-   - メモリ: 8 GB以上
-   - ディスク: 150 GB以上
-   - CPU: 4コア以上
-4. Ubuntu をインストール後、ビルド依存パッケージをインストール
+1. Download and install UTM
+2. Download the Ubuntu 22.04 Server (amd64) ISO
+3. Create a new VM:
+   - **Emulate** (Apple Silicon) or **Virtualize** (Intel Mac)
+   - Memory: 8 GB or more
+   - Disk: 150 GB or more
+   - CPU: 4 cores or more
+4. After installing Ubuntu, install the build dependency packages
 
-### 方法C: Docker (ビルドのみ)
+### Method C: Docker (Build Only)
 
 ```bash
-# Docker Desktop for Macをインストール後
+# After installing Docker Desktop for Mac
 docker run -it --platform linux/amd64 \
   -v ~/nothing-kernel:/workspace \
   ubuntu:22.04 bash
 
-# コンテナ内
+# Inside the container
 apt update && apt install -y build-essential bc bison flex libssl-dev libelf-dev \
   git curl python3 python3-pip lz4 device-tree-compiler zip unzip \
   repo rsync cpio kmod dwarves
 ```
 
-> **Docker の制限:** Bazelビルドはメモリとディスクを大量に使う。Docker Desktop のリソース制限を引き上げること (Settings → Resources → メモリ 8GB+, ディスク 150GB+)。
+> **Docker limitation:** Bazel builds consume large amounts of memory and disk. Increase the Docker Desktop resource limits (Settings → Resources → Memory 8 GB+, Disk 150 GB+).
 
-### 方法D: クラウドビルド
+### Method D: Cloud Build
 
-ローカルマシンの性能が不足する場合:
+If the local machine lacks sufficient performance:
 
-- **GitHub Codespaces** — ブラウザからLinux環境でビルド
-- **GCP / AWS の一時VM** — e2-standard-8 (8 vCPU, 32GB RAM) で15〜30分でビルド完了
-- **Gitpod** — 無料枠でも軽めのビルドは可能
+- **GitHub Codespaces** — Build in a Linux environment from a browser
+- **GCP / AWS Temporary VM** — Build completes in 15–30 minutes on e2-standard-8 (8 vCPU, 32 GB RAM)
+- **Gitpod** — Lighter builds are possible even on the free tier
 
-## 3. ビルド成果物の転送
+## 3. Transferring Build Artifacts
 
-VM/Docker内でビルドした `init_boot.img` をmacOS側に持ってくる:
+Transfer `init_boot.img` from the VM/Docker to the macOS host:
 
 ### OrbStack
 
 ```bash
-# VM内のファイルはmacOSから直接アクセス可能
-# Finder: OrbStack → kernel-build → ファイルブラウザ
-# またはターミナルから:
+# Files inside the VM are directly accessible from macOS
+# Finder: OrbStack → kernel-build → File Browser
+# Or from the terminal:
 orb push kernel-build:/home/ubuntu/kernel/out/dist/init_boot.img ~/Desktop/
 ```
 
 ### Docker
 
 ```bash
-# -v でマウントしたディレクトリに出力があればそのまま
+# If the output is in a -v mounted directory, it is already available
 ls ~/nothing-kernel/out/dist/init_boot.img
 
-# またはコンテナからコピー
+# Or copy from the container
 docker cp <container_id>:/workspace/kernel/out/dist/init_boot.img ~/Desktop/
 ```
 
 ### UTM
 
-UTMのVM内でホストとの共有フォルダを設定するか、`scp` で転送:
+Configure a shared folder between the VM and host in UTM, or transfer via `scp`:
 
 ```bash
-# VM内から
+# From inside the VM
 scp init_boot.img <mac-user>@<mac-ip>:~/Desktop/
 ```
 
-## 4. フラッシュ手順 (macOS)
+## 4. Flashing Procedure (macOS)
 
 ```bash
-# ブートローダーに入る
+# Enter bootloader
 adb reboot bootloader
 
-# バックアップ (初回のみ)
+# Backup (first time only)
 adb shell su -c "dd if=/dev/block/by-name/init_boot_a of=/sdcard/stock_init_boot_a.img"
 adb pull /sdcard/stock_init_boot_a.img ~/Desktop/backup/
 
-# カスタムカーネルをフラッシュ
+# Flash the custom kernel
 fastboot flash init_boot ~/Desktop/init_boot.img
 fastboot reboot
 
-# NetHunter zipを転送
+# Transfer the NetHunter zip
 adb push ~/Downloads/nethunter-generic-arm64-kalifs-full.zip /sdcard/Download/
 ```
 
-## 5. 復旧 (macOS)
+## 5. Recovery (macOS)
 
 ```bash
-# 電源 + 音量下 でfastbootモードに入る
+# Hold Power + Volume Down to enter fastboot mode
 fastboot flash init_boot ~/Desktop/backup/stock_init_boot_a.img
 fastboot reboot
 ```
 
-## トラブルシューティング
+## Troubleshooting
 
-| 問題 | 対処 |
+| Problem | Solution |
 |------|------|
-| `adb devices` で何も表示されない | USBケーブルを変える。USB-A to USB-Cアダプタ経由で試す |
-| `fastboot devices` で何も表示されない | `sudo fastboot devices` を試す。macOSのセキュリティ設定でUSBアクセスを許可 |
-| OrbStackのx86_64 VMが遅い | Apple Siliconでのx86_64エミュレーションは本来の30〜50%程度の速度。Bazelビルドは1〜2時間かかる場合がある |
-| Dockerでメモリ不足 | Docker Desktop → Settings → Resources → メモリを12GB+に |
-| `brew install` が失敗 | `brew update && brew upgrade` を先に実行 |
-| macOS Ventura+でadbが「開発元を確認できない」 | システム設定 → プライバシーとセキュリティ → 「このまま許可」 |
+| `adb devices` shows nothing | Try a different USB cable. Try connecting via a USB-A to USB-C adapter |
+| `fastboot devices` shows nothing | Try `sudo fastboot devices`. Allow USB access in macOS security settings |
+| OrbStack x86_64 VM is slow | x86_64 emulation on Apple Silicon runs at roughly 30–50% native speed. Bazel builds may take 1–2 hours |
+| Out of memory in Docker | Docker Desktop → Settings → Resources → Increase memory to 12 GB+ |
+| `brew install` fails | Run `brew update && brew upgrade` first |
+| macOS Ventura+ reports "unidentified developer" for adb | System Settings → Privacy & Security → Click "Allow Anyway" |
 
-## Intel Mac vs Apple Silicon
+## Intel Mac vs. Apple Silicon
 
 | | Intel Mac | Apple Silicon (M1+) |
 |---|---|---|
-| adb/fastboot | ✅ ネイティブ動作 | ✅ Rosettaで動作 |
-| Linux VM (ネイティブx86_64) | ✅ 高速 (VT-x) | ❌ エミュレーション (遅い) |
-| Linux VM (arm64) | ❌ | ✅ 高速だがAOSP clang非対応 |
-| Docker x86_64 | ✅ 高速 | ⚠️ Rosetta変換で動作 (遅い) |
-| クラウドビルド | ✅ 推奨 | ✅ **最も推奨** |
+| adb/fastboot | ✅ Native | ✅ Runs via Rosetta |
+| Linux VM (native x86_64) | ✅ Fast (VT-x) | ❌ Emulation (slow) |
+| Linux VM (arm64) | ❌ | ✅ Fast, but AOSP clang is unsupported |
+| Docker x86_64 | ✅ Fast | ⚠️ Runs via Rosetta translation (slow) |
+| Cloud build | ✅ Recommended | ✅ **Most recommended** |
 
-**Apple Siliconユーザーへの推奨:** adb/fastbootはローカルで実行し、カーネルビルドはクラウド環境 (GitHub Codespaces等) または十分なメモリを割り当てたOrbStack x86_64 VMで行うのが最も快適。
+**Recommendation for Apple Silicon users:** Run adb/fastboot locally, and perform kernel builds in a cloud environment (e.g., GitHub Codespaces) or in an OrbStack x86_64 VM with sufficient memory allocated.

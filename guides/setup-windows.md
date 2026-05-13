@@ -1,128 +1,128 @@
-# Windows 環境セットアップ
+# Windows Environment Setup
 
-Windows PCからNothing phoneにNetHunter Pro用カスタムカーネルをビルド・フラッシュするためのガイド。
+A guide for building and flashing a custom kernel for NetHunter Pro onto a Nothing phone from a Windows PC.
 
-## 概要: 何にWindowsを使い、何にLinuxが必要か
+## Overview: What Requires Windows vs. Linux
 
-| 作業 | Windows単体 | WSL2 (Linux) |
+| Task | Windows Only | WSL2 (Linux) |
 |------|:---:|:---:|
-| adb / fastboot (フラッシュ) | ✅ | ✅ |
-| ブートローダーアンロック | ✅ | ✅ |
-| NetHunter Pro zipの転送 | ✅ | ✅ |
-| **カーネルビルド** | ❌ | ✅ |
-| **カーネルモジュールビルド** | ❌ | ✅ |
-| **rtl8812auビルド** | ❌ | ✅ |
+| adb / fastboot (flashing) | ✅ | ✅ |
+| Bootloader unlock | ✅ | ✅ |
+| NetHunter Pro zip transfer | ✅ | ✅ |
+| **Kernel build** | ❌ | ✅ |
+| **Kernel module build** | ❌ | ✅ |
+| **rtl8812au build** | ❌ | ✅ |
 
-カーネルをビルドする場合はLinux環境 (WSL2 or クラウド) が必須。フラッシュだけならWindows単体でOK。
+A Linux environment (WSL2 or cloud) is required for building kernels. Flashing alone can be done entirely from Windows.
 
-## 1. ADB / Fastboot のインストール
+## 1. Installing ADB / Fastboot
 
-### 方法A: Android SDK Platform Tools (推奨)
+### Method A: Android SDK Platform Tools (Recommended)
 
-1. [Android SDK Platform Tools](https://developer.android.com/tools/releases/platform-tools) からWindows版をダウンロード
-2. 任意のフォルダに展開 (例: `C:\platform-tools`)
-3. システム環境変数のPATHに追加:
-   - `Win + X` → `システム` → `システムの詳細設定` → `環境変数`
-   - `Path` を編集 → `C:\platform-tools` を追加
-4. コマンドプロンプトまたはPowerShellで確認:
+1. Download the Windows version from [Android SDK Platform Tools](https://developer.android.com/tools/releases/platform-tools)
+2. Extract to a folder of your choice (e.g., `C:\platform-tools`)
+3. Add to the system PATH environment variable:
+   - `Win + X` → `System` → `Advanced system settings` → `Environment Variables`
+   - Edit `Path` → Add `C:\platform-tools`
+4. Verify in Command Prompt or PowerShell:
    ```
    adb version
    fastboot --version
    ```
 
-### 方法B: winget (Windows 11)
+### Method B: winget (Windows 11)
 
 ```powershell
 winget install Google.PlatformTools
 ```
 
-### USBドライバ
+### USB Drivers
 
-Nothing phoneをadb/fastbootで認識させるにはUSBドライバが必要:
+USB drivers are required for Windows to recognize the Nothing phone via adb/fastboot:
 
-1. デバイスをUSBで接続
-2. `設定 → 開発者向けオプション → USBデバッグ` を有効化
-3. ドライバが自動インストールされない場合:
-   - [Google USB Driver](https://developer.android.com/studio/run/win-usb) をインストール
-   - または [Universal ADB Driver](https://adb.clockworkmod.com/) を使用
-4. 確認:
+1. Connect the device via USB
+2. Enable `Settings → Developer Options → USB Debugging` on the phone
+3. If the driver is not installed automatically:
+   - Install the [Google USB Driver](https://developer.android.com/studio/run/win-usb)
+   - Or use the [Universal ADB Driver](https://adb.clockworkmod.com/)
+4. Verify:
    ```
    adb devices
    ```
-   デバイスが表示されればOK。`unauthorized` と出る場合は端末側でUSBデバッグ許可を承認する。
+   If the device appears, the setup is complete. If it shows `unauthorized`, approve the USB debugging prompt on the phone.
 
-### Fastbootモードでの接続確認
+### Verifying Connection in Fastboot Mode
 
 ```
 adb reboot bootloader
 fastboot devices
 ```
 
-デバイスが表示されない場合:
-- USBケーブルを変える (充電専用ケーブルではダメ)
-- 別のUSBポート (USB 2.0ポート推奨) を試す
-- デバイスマネージャーでドライバを確認
+If the device does not appear:
+- Try a different USB cable (charging-only cables will not work)
+- Try a different USB port (USB 2.0 ports are recommended)
+- Check the driver in Device Manager
 
-## 2. カーネルビルド環境の選択
+## 2. Choosing a Kernel Build Environment
 
-カーネルビルドにはLinux x86_64環境が必要。PCのスペックに応じて方法を選ぶ:
+A Linux x86_64 environment is required for kernel builds. Choose a method based on your PC's specifications:
 
-| 方法 | 必要スペック | ビルド時間目安 | 推奨 |
+| Method | Required Specs | Estimated Build Time | Recommended |
 |------|-------------|---------------|:---:|
-| **WSL2 (ローカル)** | RAM 16GB+, ディスク 150GB+, 4コア+ | 15〜60分 | ✅ ハイスペックPC |
-| **クラウド (GitHub Codespaces)** | ブラウザが動けばOK | 15〜30分 | ✅ **低スペックPC** |
-| **クラウド (GCP/AWS一時VM)** | ブラウザ + クレカ | 10〜20分 | 最速 |
-| **Docker Desktop + WSL2** | RAM 16GB+, ディスク 150GB+ | WSL2と同等 | 環境隔離したい場合 |
+| **WSL2 (Local)** | RAM 16 GB+, Disk 150 GB+, 4+ cores | 15–60 min | ✅ High-spec PC |
+| **Cloud (GitHub Codespaces)** | A working browser | 15–30 min | ✅ **Low-spec PC** |
+| **Cloud (GCP/AWS Temporary VM)** | Browser + credit card | 10–20 min | Fastest |
+| **Docker Desktop + WSL2** | RAM 16 GB+, Disk 150 GB+ | Same as WSL2 | For environment isolation |
 
-### 低スペックPCの場合
+### Low-Spec PCs
 
-RAM 8GB以下、ディスク空き100GB未満、またはCPUが2コアの場合、ローカルでのカーネルビルドは **OOMキルやビルド時間数時間のリスクがある**。以下を推奨:
+If your RAM is 8 GB or less, free disk space is under 100 GB, or your CPU has only 2 cores, local kernel builds **risk OOM kills or build times of several hours**. The following approach is recommended:
 
-1. **adb/fastboot のみローカルにインストール** (セクション1の手順)
-2. **カーネルビルドはクラウドで実行** (セクション2B)
-3. **ビルド成果物 (`init_boot.img`) をダウンロードしてローカルでフラッシュ**
+1. **Install only adb/fastboot locally** (Section 1 above)
+2. **Run the kernel build in the cloud** (Section 2B)
+3. **Download the build artifact (`init_boot.img`) and flash locally**
 
-この場合、WSL2のセットアップ (セクション2A) はスキップしてよい。
+In this case, you can skip WSL2 setup (Section 2A).
 
-### 2A. WSL2 セットアップ (ローカルビルド)
+### 2A. WSL2 Setup (Local Build)
 
-> **スキップ可:** クラウドビルド (2B) を使う場合はこのセクションは不要。
+> **Can be skipped:** This section is not needed if you are using cloud builds (2B).
 
-カーネルビルドにはLinux環境が必要。WSL2 (Windows Subsystem for Linux 2) を使う。
+A Linux environment is required for kernel builds. Use WSL2 (Windows Subsystem for Linux 2).
 
-### WSL2 のインストール
+### Installing WSL2
 
-PowerShell (管理者) で:
+In PowerShell (Administrator):
 
 ```powershell
 wsl --install -d Ubuntu-22.04
 ```
 
-再起動後、Ubuntuが起動してユーザー作成を求められる。
+After restarting, Ubuntu will launch and prompt you to create a user account.
 
-### ディスク容量の確保
+### Ensuring Sufficient Disk Space
 
-カーネルビルドには100–150 GBの空きが必要。WSL2のデフォルトvhdxサイズが小さい場合は拡張する:
+Kernel builds require 100–150 GB of free space. If the default WSL2 vhdx size is too small, expand it:
 
 ```powershell
-# WSL2を停止
+# Stop WSL2
 wsl --shutdown
 
-# vhdxのパスを確認 (通常: %LOCALAPPDATA%\Packages\CanonicalGroupLimited.Ubuntu22.04...\LocalState\ext4.vhdx)
-# diskpartで拡張
+# Locate the vhdx path (typically: %LOCALAPPDATA%\Packages\CanonicalGroupLimited.Ubuntu22.04...\LocalState\ext4.vhdx)
+# Expand with diskpart
 diskpart
 select vdisk file="C:\Users\<USER>\AppData\Local\Packages\CanonicalGroupLimited.Ubuntu22.04onWindows_79rhkp1fndgsc\LocalState\ext4.vhdx"
 expand vdisk maximum=200000
 exit
 
-# WSL2内でリサイズ
+# Resize within WSL2
 wsl
 sudo resize2fs /dev/sdc 200G
 ```
 
-### ビルド環境のセットアップ
+### Setting Up the Build Environment
 
-WSL2 Ubuntu内で:
+Inside WSL2 Ubuntu:
 
 ```bash
 sudo apt update && sudo apt upgrade -y
@@ -132,56 +132,56 @@ sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev \
   repo rsync cpio kmod dwarves
 ```
 
-以降のカーネルビルド手順は各デバイスガイドの通り。WSL2内のパスで作業する。
+From here, follow the kernel build instructions in the respective device guide. Work within WSL2 paths.
 
-### WSL2 から adb/fastboot を使う
+### Using adb/fastboot from WSL2
 
-WSL2内から直接USBデバイスにアクセスするには `usbipd-win` が必要:
+To access USB devices directly from WSL2, `usbipd-win` is required:
 
 ```powershell
-# Windows側 (PowerShell 管理者)
+# Windows side (PowerShell Administrator)
 winget install usbipd
 ```
 
 ```bash
-# WSL2側
+# WSL2 side
 sudo apt install linux-tools-generic hwdata
 sudo update-alternatives --install /usr/local/bin/usbip usbip /usr/lib/linux-tools/*-generic/usbip 20
 ```
 
 ```powershell
-# デバイスを接続後、PowerShellで:
-usbipd list                    # BUSID確認
-usbipd bind --busid <BUSID>    # バインド
-usbipd attach --wsl --busid <BUSID>   # WSLにアタッチ
+# After connecting the device, in PowerShell:
+usbipd list                    # Check BUSID
+usbipd bind --busid <BUSID>    # Bind
+usbipd attach --wsl --busid <BUSID>   # Attach to WSL
 ```
 
-WSL2内で `adb devices` が使えるようになる。
+`adb devices` will now work inside WSL2.
 
-> **簡単な方法:** WSL2ではカーネルビルドのみ行い、adb/fastbootはWindows側のコマンドプロンプトで実行する。ビルド成果物は `/mnt/c/Users/<USER>/...` 経由でWindows側からアクセスできる。
+> **Simpler approach:** Perform only the kernel build in WSL2, and run adb/fastboot from the Windows Command Prompt. Build artifacts can be accessed from Windows via `/mnt/c/Users/<USER>/...`.
 
 ```bash
-# WSL2内でビルド後、Windowsアクセス可能な場所にコピー
+# After building in WSL2, copy to a Windows-accessible location
 cp out/dist/init_boot.img /mnt/c/Users/<USER>/Desktop/
 ```
 
-Windows側で:
+On the Windows side:
 ```
 cd C:\Users\<USER>\Desktop
 fastboot flash init_boot init_boot.img
 ```
 
-### 2B. クラウドビルド (低スペックPC / ローカルにLinux環境を作りたくない場合)
+### 2B. Cloud Build (Low-Spec PC / No Local Linux Environment Desired)
 
-ブラウザだけあればカーネルビルドが可能。ビルド成果物をダウンロードしてローカルのadb/fastbootでフラッシュする。
+A browser is all that is needed to build the kernel. Download the build artifacts and flash using local adb/fastboot.
 
-#### GitHub Codespaces (推奨)
+#### GitHub Codespaces (Recommended)
 
-GitHubアカウントがあれば無料枠で利用可能 (月120コア時間):
+Available with a free-tier GitHub account (120 core-hours per month):
 
-1. [github.com/codespaces](https://github.com/codespaces) にアクセス
-2. **New codespace** → **Blank template** → マシンタイプ **4-core** 以上を選択
-3. ターミナルが開いたらビルド環境をセットアップ:
+1. Go to [github.com/codespaces](https://github.com/codespaces)
+2. **New codespace** → **Blank template** → Select machine type **4-core** or higher
+3. Once the terminal opens, set up the build environment:
 
 ```bash
 sudo apt update
@@ -189,32 +189,32 @@ sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev \
   git curl python3 python3-pip lz4 device-tree-compiler zip unzip \
   repo rsync cpio kmod dwarves
 
-# 以降はデバイスガイドの手順通りにカーネルをクローン・ビルド
-# 例: Phone (2a)
+# Then follow the device guide to clone and build the kernel
+# Example: Phone (2a)
 git clone -b mt6886/Pacman/v --depth=1 \
   https://github.com/NothingOSS/android_kernel_5.15_nothing_mt6886.git kernel
 ```
 
-4. ビルド完了後、成果物をダウンロード:
-   - Codespaceのファイルエクスプローラから `init_boot.img` を右クリック → **Download**
-   - またはターミナルで: `gh codespace cp remote:kernel/out/dist/init_boot.img .` (ローカル側で実行)
+4. After the build completes, download the artifact:
+   - Right-click `init_boot.img` in the Codespace file explorer → **Download**
+   - Or from a local terminal: `gh codespace cp remote:kernel/out/dist/init_boot.img .`
 
 #### Google Cloud Shell
 
-Googleアカウントがあれば無料で使える (e2-small, 一時的):
+Available for free with a Google account (e2-small, temporary):
 
-1. [shell.cloud.google.com](https://shell.cloud.google.com/) にアクセス
-2. ターミナルでビルド環境セットアップ → ビルド
-3. `cloudshell download init_boot.img` でローカルにダウンロード
+1. Go to [shell.cloud.google.com](https://shell.cloud.google.com/)
+2. Set up the build environment in the terminal → Build
+3. Download locally with `cloudshell download init_boot.img`
 
-> **注意:** Cloud Shellのディスクは5GBしかない永続領域 + 一時領域。大きなカーネルツリーは一時領域に置く。セッション終了で消える。
+> **Note:** Cloud Shell has only 5 GB of persistent storage plus temporary storage. Place large kernel trees in the temporary area. Data is lost when the session ends.
 
-#### GCP / AWS の一時VM (最速)
+#### GCP / AWS Temporary VM (Fastest)
 
-予算がある場合:
+If budget allows:
 
 ```bash
-# GCP: e2-standard-8 (8 vCPU, 32GB RAM) — ビルド15分程度
+# GCP: e2-standard-8 (8 vCPU, 32GB RAM) — ~15 min build time
 gcloud compute instances create kernel-build \
   --machine-type=e2-standard-8 \
   --boot-disk-size=200GB \
@@ -227,63 +227,63 @@ aws ec2 run-instances \
   --image-id ami-0xxx  # Ubuntu 22.04 AMI
 ```
 
-ビルド後に `scp` でダウンロードし、VMを削除すれば数十円程度。
+After the build, download via `scp` and delete the VM — the cost will be minimal.
 
-#### クラウドビルドの流れ
+#### Cloud Build Workflow
 
 ```
 ┌──────────────────────────┐     ┌──────────────────────────┐
-│     クラウド環境          │     │     ローカル Windows     │
+│     Cloud Environment     │     │     Local Windows        │
 │                          │     │                          │
-│  1. カーネルソース取得    │     │                          │
-│  2. defconfig設定        │     │                          │
-│  3. ビルド               │     │                          │
-│  4. init_boot.img生成    │────→│  5. ダウンロード          │
+│  1. Fetch kernel source  │     │                          │
+│  2. Configure defconfig  │     │                          │
+│  3. Build                │     │                          │
+│  4. Generate init_boot   │────→│  5. Download             │
 │                          │     │  6. fastboot flash       │
 │                          │     │  7. NetHunter install    │
 └──────────────────────────┘     └──────────────────────────┘
 ```
 
-## 3. フラッシュ手順 (Windows)
+## 3. Flashing Procedure (Windows)
 
 ```
-:: ブートローダーに入る
+:: Enter bootloader
 adb reboot bootloader
 
-:: バックアップ (初回のみ)
+:: Backup (first time only)
 adb shell su -c "dd if=/dev/block/by-name/init_boot_a of=/sdcard/stock_init_boot_a.img"
 adb pull /sdcard/stock_init_boot_a.img C:\Users\<USER>\Desktop\backup\
 
-:: カスタムカーネルをフラッシュ
+:: Flash the custom kernel
 fastboot flash init_boot init_boot.img
 fastboot reboot
 
-:: NetHunter zipを転送
+:: Transfer the NetHunter zip
 adb push nethunter-generic-arm64-kalifs-full.zip /sdcard/Download/
 ```
 
-## 4. 復旧 (Windows)
+## 4. Recovery (Windows)
 
-起動しなくなった場合:
+If the device fails to boot:
 
 ```
-:: 電源 + 音量下 を長押しでfastbootモードに入る
-:: ストックイメージをフラッシュ
+:: Hold Power + Volume Down to enter fastboot mode
+:: Flash the stock image
 fastboot flash init_boot stock_init_boot_a.img
 fastboot reboot
 ```
 
-## トラブルシューティング
+## Troubleshooting
 
-| 問題 | 対処 |
+| Problem | Solution |
 |------|------|
-| `adb devices` で何も表示されない | USBドライバ再インストール、USBデバッグの許可確認 |
-| `fastboot devices` で何も表示されない | Google USB Driverインストール、USBポート変更 |
-| WSL2で `apt install` が遅い | WSL2のDNS設定: `/etc/resolv.conf` に `nameserver 8.8.8.8` |
-| WSL2のディスクが足りない | 上記のvhdx拡張手順を実行 |
-| `adb push` が遅い | USB 3.0ポートを使用、MTPモードからファイル転送モードに切替 |
-| Windowsのウイルス対策がビルドを遅くする | WSL2のファイルシステム (`/home/...`) 内で作業する (Windows側の `/mnt/c/` は遅い) |
-| WSL2のビルドがOOM (メモリ不足) で止まる | `.wslconfig` でメモリ制限を緩和するか、`make -j2` でジョブ数を減らす。根本的にはクラウドビルド (2B) を推奨 |
-| PCのRAMが8GB以下 | WSL2でのビルドは厳しい。クラウドビルド (2B) を使用 |
-| ディスク空きが100GB未満 | カーネルツリーだけで50〜80GB必要。外付けSSDにWSL2を移動するか、クラウドビルドを使用 |
-| WSL2でBazelがクラッシュする | メモリ不足の可能性大。`--jobs=2` オプションを追加するか、クラウドビルドへ |
+| `adb devices` shows nothing | Reinstall USB drivers; verify USB debugging is authorized |
+| `fastboot devices` shows nothing | Install Google USB Driver; try a different USB port |
+| `apt install` is slow in WSL2 | Fix WSL2 DNS: add `nameserver 8.8.8.8` to `/etc/resolv.conf` |
+| WSL2 disk space is insufficient | Follow the vhdx expansion procedure above |
+| `adb push` is slow | Use a USB 3.0 port; switch from MTP mode to File Transfer mode |
+| Windows antivirus slows down builds | Work within the WSL2 filesystem (`/home/...`); the Windows-side `/mnt/c/` path is slow |
+| WSL2 build stops with OOM (out of memory) | Increase the memory limit in `.wslconfig`, or reduce parallelism with `make -j2`. For a reliable solution, use cloud builds (2B) |
+| PC has 8 GB RAM or less | Local builds in WSL2 are impractical. Use cloud builds (2B) |
+| Less than 100 GB of free disk space | The kernel tree alone requires 50–80 GB. Move WSL2 to an external SSD, or use cloud builds |
+| Bazel crashes in WSL2 | Likely caused by insufficient memory. Add the `--jobs=2` option, or switch to cloud builds |
