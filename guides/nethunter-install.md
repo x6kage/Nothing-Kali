@@ -11,28 +11,73 @@ Common installation steps for all Nothing devices after flashing a custom kernel
 - PC with `adb` and `fastboot`
 - ~10 GB free storage on the device (for full chroot)
 
-## 1. Download NetHunter Pro
+## 1. Verify Architecture
 
-Download **NetHunter Pro Generic arm64** from the official Kali download page:
+**All Nothing devices use the arm64 (aarch64)** architecture. Select `arm64` when downloading NetHunter Pro.
 
-https://www.kali.org/get-kali/#kali-mobile
+To verify on the device:
 
-Select:
-- **Platform:** Android
-- **Type:** NetHunter
-- **Architecture:** arm64
+```bash
+# Method 1: getprop
+adb shell getprop ro.product.cpu.abi
+# Output: arm64-v8a  ← correct
 
-This downloads a zip file (e.g., `nethunter-generic-arm64-kalifs-full.zip`).
+# Method 2: uname
+adb shell uname -m
+# Output: aarch64  ← correct
+```
 
-### Which Version?
+| Output | Meaning | NetHunter Selection |
+|------|------|:---:|
+| `arm64-v8a` / `aarch64` | 64-bit ARM | **arm64** ✅ |
+| `armeabi-v7a` / `armv7l` | 32-bit ARM | arm (N/A) |
+| `x86_64` | Intel/AMD 64-bit | x86_64 (N/A) |
 
-| Variant | Size | Contents | Recommended |
-|---------|------|----------|:-:|
-| **Full** | ~1.5 GB | Complete toolset (Metasploit, Nmap, Burp, etc.) | ✅ |
-| **Minimal** | ~300 MB | Core tools only, install others via `apt` | For low storage |
-| **Nano** | ~100 MB | Bare minimum | Not recommended |
+> **Important:** Do not select `armhf` or `armel`. All Nothing phones are 64-bit.
 
-> Always verify the download checksum against the SHA256 listed on the Kali download page.
+## 2. Download NetHunter Pro
+
+Official download page: https://www.kali.org/get-kali/#kali-mobile
+
+### Download Steps
+
+1. Open the page and scroll to the **NetHunter** section
+2. Select the following:
+
+| Field | Value | Reason |
+|------|-----------|------|
+| **Platform** | Android | — |
+| **Type** | NetHunter | Full version including Pro |
+| **Architecture** | **arm64** | All Nothing phones are arm64 |
+
+3. Confirm the filename looks like `nethunter-generic-arm64-kalifs-full.zip`
+
+### Why "Generic"?
+
+NetHunter Pro images come in "device-specific" and "Generic" variants:
+
+| Type | Description | For Nothing phones |
+|--------|------|:---:|
+| **Generic arm64** | Universal arm64 image | ✅ Use this |
+| Device-specific (Pixel, OnePlus, etc.) | Built for specific devices | ❌ No Nothing build available |
+
+There is no Nothing phone-specific NetHunter image, so use **Generic arm64**. As long as USB ConfigFS is enabled in the custom kernel, the Generic image provides full functionality.
+
+### Image Variants
+
+| Variant | Filename keyword | Size | Contents | Recommended |
+|---------|----------------------|--------|------|:---:|
+| **Full** | `kalifs-full` | ~1.5 GB | Complete toolset (Metasploit, Nmap, Burp, etc.) | ✅ |
+| **Minimal** | `kalifs-minimal` | ~300 MB | Basic tools only; install others via `apt` | For saving storage |
+| **Nano** | `kalifs-nano` | ~100 MB | Bare minimum | Not recommended |
+
+> After downloading, verify the SHA256 checksum listed on the Kali download page:
+> ```bash
+> # Linux / macOS
+> sha256sum nethunter-generic-arm64-kalifs-full.zip
+> # Windows (PowerShell)
+> Get-FileHash nethunter-generic-arm64-kalifs-full.zip -Algorithm SHA256
+> ```
 
 ## 2. Install NetHunter
 

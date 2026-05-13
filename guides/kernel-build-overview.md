@@ -2,11 +2,9 @@
 
 > This guide explains the concepts behind building a custom NetHunter kernel. Read this before diving into device-specific guides.
 
-## What NetHunter Pro Does (NetHunter Proとは何をしているのか)
+## What NetHunter Pro Does
 
 NetHunter Pro does **not replace Android**. It takes the stock Android kernel source, **adds** penetration testing features, and rebuilds it. Your phone stays a phone — it just gains extra capabilities.
-
-(NetHunter ProはAndroidを置き換えない。ストックのAndroidカーネルソースをベースに、ペネトレーションテストに必要な機能を追加してリビルドするだけ。)
 
 ### What Changes / What Stays the Same
 
