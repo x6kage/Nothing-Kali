@@ -1,5 +1,7 @@
 # Nothing-Kali
 
+**[日本語版はこちら / Japanese](README.ja.md)**
+
 > Kali NetHunter Pro kernel builds and installation guides for Nothing & CMF devices.
 
 Turn your Nothing phone into a portable penetration testing platform — without losing everyday functionality.
@@ -62,15 +64,15 @@ All Nothing phones are **arm64 (aarch64)**. Use **NetHunter Pro Generic arm64** 
 
 ### Common
 
-- [NetHunter Pro Installation](guides/nethunter-install.md) — ARM64確認、ダウンロード、インストール手順
+- [NetHunter Pro Installation](guides/nethunter-install.md) — ARM64 verification, download, install
 - [External WiFi Adapters](guides/external-wifi.md)
 - [Troubleshooting](guides/troubleshooting.md)
 - [Security & Operational Considerations](guides/security.md)
 
-### Platform Setup (ビルド環境)
+### Platform Setup
 
-- [Windows Setup](guides/setup-windows.md) — ADB/Fastboot、WSL2でのカーネルビルド
-- [macOS Setup](guides/setup-macos.md) — Homebrew、OrbStack/UTM/Dockerでのカーネルビルド
+- [Windows Setup](guides/setup-windows.md) — ADB/Fastboot, WSL2 / cloud kernel build
+- [macOS Setup](guides/setup-macos.md) — Homebrew, OrbStack / UTM / Docker kernel build
 
 ## Prerequisites
 
@@ -80,11 +82,11 @@ All devices require:
 2. **Root access** (Magisk / KernelSU / KernelSU Next)
 3. **Partition backups** — always back up `persist`, `nvram`, etc. before flashing custom kernels
 4. **Build environment** — Linux x86_64 host with:
-   - AOSP prebuilt clang (version varies by device — see [Kernel Build Overview](guides/kernel-build-overview.md#1-ツールチェーン))
+   - AOSP prebuilt clang (version varies by device — see [Kernel Build Overview](guides/kernel-build-overview.md#1-toolchain))
    - `mkbootimg`, `lz4`, `dtc`
    - 16 GB+ RAM, 100–150 GB disk space
-   - **Windows:** [WSL2セットアップガイド](guides/setup-windows.md)
-   - **macOS:** [macOSセットアップガイド](guides/setup-macos.md)
+   - **Windows:** [Windows Setup Guide](guides/setup-windows.md) (WSL2 or cloud build)
+   - **macOS:** [macOS Setup Guide](guides/setup-macos.md) (OrbStack / UTM / Docker)
 
 ### Build Environment Quick Setup
 
@@ -206,7 +208,7 @@ Nothing-Kali/
 ├── README.md                          # This file
 ├── guides/
 │   ├── kernel-build-overview.md       # Start here — what/why/how
-│   ├── nethunter-install.md           # ARM64確認 + ダウンロード + インストール
+│   ├── nethunter-install.md           # ARM64 verification + download + install
 │   ├── phone-2a.md                    # Phone (2a) kernel build
 │   ├── phone-3.md                     # Phone (3) kernel build + monitor mode
 │   ├── phone-3a.md                    # Phone (3a) kernel build
@@ -216,7 +218,9 @@ Nothing-Kali/
 │   ├── troubleshooting.md             # Common problems and solutions
 │   ├── security.md                    # OpSec and safety considerations
 │   ├── setup-windows.md              # Windows: ADB/Fastboot + WSL2 build env
-│   └── setup-macos.md                # macOS: Homebrew + VM/Docker build env
+│   ├── setup-macos.md                # macOS: Homebrew + VM/Docker build env
+│   └── ja/                           # Japanese translations (日本語版)
+│       └── (mirrors of all guides above)
 └── scripts/
     ├── enable-nethunter-configs.sh    # Enable USB ConfigFS in kernel config
     ├── setup-clang.sh                 # Download AOSP clang prebuilts
