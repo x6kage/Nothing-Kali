@@ -62,10 +62,15 @@ All Nothing phones are **arm64 (aarch64)**. Use **NetHunter Pro Generic arm64** 
 
 ### Common
 
-- [NetHunter Pro Installation](guides/nethunter-install.md)
+- [NetHunter Pro Installation](guides/nethunter-install.md) — ARM64確認、ダウンロード、インストール手順
 - [External WiFi Adapters](guides/external-wifi.md)
 - [Troubleshooting](guides/troubleshooting.md)
 - [Security & Operational Considerations](guides/security.md)
+
+### Platform Setup (ビルド環境)
+
+- [Windows Setup](guides/setup-windows.md) — ADB/Fastboot、WSL2でのカーネルビルド
+- [macOS Setup](guides/setup-macos.md) — Homebrew、OrbStack/UTM/Dockerでのカーネルビルド
 
 ## Prerequisites
 
@@ -78,6 +83,8 @@ All devices require:
    - AOSP prebuilt clang (version varies by device — see [Kernel Build Overview](guides/kernel-build-overview.md#1-ツールチェーン))
    - `mkbootimg`, `lz4`, `dtc`
    - 16 GB+ RAM, 100–150 GB disk space
+   - **Windows:** [WSL2セットアップガイド](guides/setup-windows.md)
+   - **macOS:** [macOSセットアップガイド](guides/setup-macos.md)
 
 ### Build Environment Quick Setup
 
@@ -199,7 +206,7 @@ Nothing-Kali/
 ├── README.md                          # This file
 ├── guides/
 │   ├── kernel-build-overview.md       # Start here — what/why/how
-│   ├── nethunter-install.md           # Common install steps
+│   ├── nethunter-install.md           # ARM64確認 + ダウンロード + インストール
 │   ├── phone-2a.md                    # Phone (2a) kernel build
 │   ├── phone-3.md                     # Phone (3) kernel build + monitor mode
 │   ├── phone-3a.md                    # Phone (3a) kernel build
@@ -207,7 +214,9 @@ Nothing-Kali/
 │   ├── phone-4a-pro.md               # Phone (4a) Pro kernel build + monitor mode
 │   ├── external-wifi.md               # External USB WiFi adapters
 │   ├── troubleshooting.md             # Common problems and solutions
-│   └── security.md                    # OpSec and safety considerations
+│   ├── security.md                    # OpSec and safety considerations
+│   ├── setup-windows.md              # Windows: ADB/Fastboot + WSL2 build env
+│   └── setup-macos.md                # macOS: Homebrew + VM/Docker build env
 └── scripts/
     ├── enable-nethunter-configs.sh    # Enable USB ConfigFS in kernel config
     ├── setup-clang.sh                 # Download AOSP clang prebuilts
